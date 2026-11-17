@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Disaster Response Platform</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+ body{font-family:system-ui,sans-serif;margin:0;background:#f4f6f8;color:#1a1a1a}
+ header{background:#b3261e;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
+ main{max-width:1100px;margin:20px auto;padding:0 16px;display:grid;gap:16px}
+ .card{background:#fff;border-radius:8px;padding:16px;box-shadow:0 1px 3px #0002}
+ .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+ input,select,textarea,button{padding:8px;margin:4px 0;width:100%;box-sizing:border-box;font:inherit}
+ button{background:#b3261e;color:#fff;border:0;border-radius:6px;cursor:pointer;width:auto;padding:8px 14px}
+ button.sec{background:#555} table{width:100%;border-collapse:collapse;font-size:14px}
+ td,th{padding:6px;border-bottom:1px solid #eee;text-align:left} .sev{font-weight:700;padding:2px 8px;border-radius:10px;color:#fff}
+ .err{color:#b3261e}
+</style></head><body><div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef}=React;
+const sevColor=s=>["","#2e7d32","#7cb342","#f9a825","#ef6c00","#b3261e"][s];
+function Chart_({type,data,title}){
+  const ref=useRef();
+  useEffect(()=>{const c=new Chart(ref.current,{type,data:{labels:Object.keys(data),datasets:[{label:title,data:Object.values(data),backgroundColor:["#b3261e","#ef6c00","#f9a825","#2e7d32","#1565c0","#6a1b9a","#555"]}]},options:{plugins:{legend:{display:type==="doughnut"}}}});return()=>c.destroy()},[JSON.stringify(data)]);
+  return <div><b>{title}</b><canvas ref={ref} height="160"></canvas></div>;
+}
+function App(){
+  const [token,setToken]=useState(localStorage.getItem("t")||""), [role,setRole]=useState(localStorage.getItem("r")||"");
+  const [err,setErr]=useState(""), [inc,setInc]=useState([]), [res,setRes]=useState([]), [stats,setStats]=useState(null);
+  const [f,setF]=useState({title:"",description:"",category:"flood",location:""});
+  const api=async(path,opt={})=>{const r=await fetch(path,{...opt,headers:{...(opt.json?{"Content-Type":"application/json"}:{}),Authorization:"Bearer "+token}, body:opt.json?JSON.stringify(opt.json):opt.body});
+    if(r.status===401){logout();throw new Error("Session expired")} if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(typeof e.detail==="string"?e.detail:"Request failed")} return r.status===204?null:r.json()};
+  const load=async()=>{try{setInc(await api("/incidents"));setRes(await api("/resources"));setStats(await api("/analytics/summary"))}catch(e){setErr(e.message)}};
+  useEffect(()=>{if(token)load()},[token]);
+  const logout=()=>{localStorage.clear();setToken("");setRole("")};
+  const auth=async(e,mode)=>{e.preventDefault();setErr("");const u=e.target.u.value,p=e.target.p.value;
+    try{if(mode==="register"){const r=await fetch("/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});if(!r.ok)throw new Error("Registration failed (password min 8 chars / name taken)")}
+      const r=await fetch("/auth/login",{method:"POST",body:new URLSearchParams({username:u,password:p})});if(!r.ok)throw new Error("Incorrect username or password");
+      const d=await r.json();localStorage.setItem("t",d.access_token);localStorage.setItem("r",d.role);setToken(d.access_token);setRole(d.role)}catch(x){setErr(x.message)}};
+  const report=async e=>{e.preventDefault();try{await api("/incidents",{method:"POST",json:f});setF({...f,title:"",description:"",location:""});setErr("");load()}catch(x){setErr(x.message)}};
+  const setStatus=async(id,status)=>{try{await api(`/incidents/${id}/status`,{method:"PATCH",json:{status}});load()}catch(x){setErr(x.message)}};
+  const dispatch=async id=>{const rid=prompt("Resource ID (see Resources table)?");const q=prompt("Quantity?");if(!rid||!q)return;try{await api(`/incidents/${id}/dispatch`,{method:"POST",json:{resource_id:+rid,quantity:+q}});load()}catch(x){setErr(x.message)}};
+  const staff=role==="responder"||role==="admin";
+  if(!token) return <main><div className="card" style={{maxWidth:360,margin:"60px auto"}}><h2>Disaster Response Login</h2>
+    <form onSubmit={e=>auth(e,"login")}><input name="u" placeholder="Username" required/><input name="p" type="password" placeholder="Password" required/>
+    <button>Login</button> <button type="button" className="sec" onClick={e=>auth({preventDefault(){},target:e.target.form},"register")}>Register</button></form>
+    <p className="err">{err}</p></div></main>;
+  return <><header><b>🚨 Smart Disaster Response & Emergency Coordination</b><span>{role} <button className="sec" onClick={logout}>Logout</button></span></header>
+  <main>{err&&<div className="card err">{err}</div>}
+   {stats&&<div className="card"><b>Total incidents: {stats.total} &nbsp;|&nbsp; Avg severity: {stats.avg_severity}</b>
+     <div className="grid"><Chart_ type="doughnut" title="By category" data={stats.by_category}/><Chart_ type="bar" title="By severity (1-5)" data={stats.by_severity}/><Chart_ type="bar" title="By status" data={stats.by_status}/></div></div>}
+   <div className="grid">
+    <form className="card" onSubmit={report}><b>Report an incident</b>
+      <input placeholder="Title" value={f.title} onChange={e=>setF({...f,title:e.target.value})} required/>
+      <select value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{["flood","fire","earthquake","cyclone","medical","landslide","other"].map(c=><option key={c}>{c}</option>)}</select>
+      <input placeholder="Location" value={f.location} onChange={e=>setF({...f,location:e.target.value})} required/>
+      <textarea rows="3" placeholder="Describe the situation (min 10 chars)" value={f.description} onChange={e=>setF({...f,description:e.target.value})} required/>
+      <button>Submit (AI triage runs automatically)</button></form>
+    <div className="card"><b>Resources</b><table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Qty</th><th>Location</th></tr></thead>
+      <tbody>{res.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.name}</td><td>{r.type}</td><td>{r.quantity}</td><td>{r.location}</td></tr>)}</tbody></table>
+      {staff&&<button className="sec" onClick={async()=>{const n=prompt("Name");const t=prompt("Type");const q=prompt("Quantity");const l=prompt("Location");if(n&&t&&q&&l){try{await api("/resources",{method:"POST",json:{name:n,type:t,quantity:+q,location:l}});load()}catch(x){setErr(x.message)}}}}>+ Add resource</button>}</div></div>
+   <div className="card"><b>Incidents (most severe first)</b><div style={{overflowX:"auto"}}><table><thead><tr><th>Sev</th><th>Title</th><th>Type</th><th>Location</th><th>Status</th><th>AI suggestion (human must verify)</th>{staff&&<th>Actions</th>}</tr></thead>
+    <tbody>{inc.map(i=><tr key={i.id}><td><span className="sev" style={{background:sevColor(i.severity)}}>{i.severity}</span></td><td>{i.title}</td><td>{i.category}</td><td>{i.location}</td><td>{i.status}</td><td>{i.ai_actions}</td>
+     {staff&&<td><select value={i.status} onChange={e=>setStatus(i.id,e.target.value)}>{["reported","verified","responding","resolved"].map(s=><option key={s}>{s}</option>)}</select><button onClick={()=>dispatch(i.id)}>Dispatch</button></td>}</tr>)}</tbody></table></div></div>
+  </main></>;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script></body></html>

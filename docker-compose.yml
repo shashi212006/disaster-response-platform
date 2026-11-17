@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16
+    environment: { POSTGRES_USER: disaster, POSTGRES_PASSWORD: disaster, POSTGRES_DB: disaster }
+    volumes: [pgdata:/var/lib/postgresql/data]
+  api:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      DATABASE_URL: postgresql://disaster:disaster@db:5432/disaster
+      SECRET_KEY: change-me-to-a-long-random-string-in-prod
+      ADMIN_PASSWORD: ChangeMe@123
+    depends_on: [db]
+volumes: { pgdata: {} }
